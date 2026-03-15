@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Выбор точки{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center mt-5">
+
+    <div class="col-md-6">
+
+        <div class="card shadow-sm">
+
+            <div class="card-body">
+
+                <h4 class="card-title mb-4 text-center">
+                    Выберите точку работы
+                </h4>
+
+                <form method="post" action="{{ url_for('main.set_point') }}">
+
+                    {% for point in points %}
+                    <div class="form-check mb-2">
+                        <input
+                            class="form-check-input"
+                            type="radio"
+                            name="point_id"
+                            value="{{ point[0] }}"
+                            id="point{{ point[0] }}"
+                            required
+                        >
+
+                        <label class="form-check-label" for="point{{ point[0] }}">
+                            {{ point[1] }}
+                        </label>
+                    </div>
+                    {% endfor %}
+
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            Начать работу
+                        </button>
+                    </div>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
