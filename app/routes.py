@@ -146,42 +146,40 @@ def set_point():
 @login_required
 @point_required
 def orders():
+
+    # Получаем нужные идетификаторы из сессии
     point_id = session["point_id"]
     user_id = session["user_id"]
 
     conn = get_db_connection()
     cur = conn.cursor()
-    print("Создаю заказ")
-    print (point_id, user_id)
+    print(f"Создаем или используем старый заказ для полльзователя {user_id} в точке {point_id}")
 
+    ## В этой функции мы определяем, создается новый заказ или используется старый
     cur.execute(
         "select * from get_or_create_order(%s,%s)",
         (point_id, user_id)
     )
-
+    ## Запоминаем заказ и его статус
     order_id, status_id = cur.fetchone()
+    
+    ## Получаем список всех продуктов
     conn.commit()
-    cur.execute(
-        "select * from v_get_products"
-    )
-
-    # cur.execute("""
-    #     select
-    #         c.product_category_id,
-    #         c.name,
-    #         p.product_id,
-    #         p.name,
-    #         u.name
-    #     from products p
-    #     join product_categories c on c.product_category_id = p.product_category_id
-    #     join unit_of_measure u on u.measure_id = p.measure_id
-    #     order by c.name, p.sort_order
-    # """)
+    cur.execute("""
+        select
+            product_category_id
+        ,   category_name
+        ,   product_id
+        ,   product_name
+        ,   measure_name    
+        from v_get_products
+    """)
 
     products = cur.fetchall()
 
+    ## Получаем текущие позиции в заказе
     cur.execute(
-        "select * from get_current_order_products(%s)",
+        "select product_id,  quantity from get_current_order_products(%s)",
         (order_id,)
     )
 
@@ -190,15 +188,18 @@ def orders():
     categories = {}
 
     for cat_id, cat_name, prod_id, prod_name, measure in products:
-
+        
+        ## Добавляем только категории в словарь
         if cat_id not in categories:
             categories[cat_id] = {
                 "name": cat_name,
                 "products": []
             }
 
+        ## Получаем количество уже учтенных товаров
         quantity = quantities.get(prod_id, "")
 
+        ## Формирую результирующую выборку. 
         categories[cat_id]["products"].append({
             "product_id": prod_id,
             "name": prod_name,
@@ -209,7 +210,6 @@ def orders():
     cur.close()
     
     conn.close()
-    print (categories)
     
     return render_template(
         "orders.html",
@@ -222,44 +222,36 @@ def orders():
 @login_required
 @point_required
 def save_orders():
+
+    ## Процедура сохранения заказа
     order_id = int(request.form.get("order_id"))
+    is_approved = request.form.get("is_approved")  # галка
+
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # cur.execute(
-    #     "select * from get_order_status_id(%s)",
-    #     (order_id,)
-    # )
-
-    print("ORDER_ID:", order_id)
-
+    ## Получаем текущий статус заказа
     cur.execute(
-        "select status_id from orders where order_id = %s",
+        "select status_id from get_order_status_id(%s)",
         (order_id,)
     )
 
     status_id = cur.fetchone()[0]
 
-    # row = cur.fetchone()
-
-    # if row is None:
-    #     cur.close()
-    #     conn.close()
-    #     return redirect(url_for("main.orders"))
-
-    # status_id = row[0]
-
-    print("ORDER_ID:", order_id)
-
-    if status_id == 3:
+    ## Статус = 3 это финальный статус. Возвращаем на страницу с заказами.
+    if status_id  != 2:
+        cur.close()
+        conn.close()
         return redirect(url_for("main.orders"))
 
     for key, value in request.form.items():
-  
+        
+        ## Построково обрабатываем форму, нас интересуют те строки, которые начинаются с
+        ## product_
         if not key.startswith("product_"):
             continue
         
-
+        
         product_id = int(key.split("_")[1])  
         value = value.strip()
 
@@ -269,33 +261,34 @@ def save_orders():
             quantity = round(float(value), 2)
 
         quantity = round(quantity, 2)
-        print('order_id = ' )
-        print(order_id)
-        print('product_id = ' )
-        print(product_id)
-        print('quantity = ' )
-        print(quantity)
+        print(f"Для заказа {order_id}, отметили продукт с идетификатором {product_id} в количестве {quantity}")
+        
+        ## Если что то добавилось, мы это добавляем 
         if quantity > 0:
             print('Вызов процедуроы')
             cur.execute(
-                "CALL add_info_product_order(%(order_id)s, %(product_id)s, %(quantity)s)",
+                "call add_info_product_order(%(order_id)s, %(product_id)s, %(quantity)s)",
                 {'order_id': order_id, 'product_id': product_id, 'quantity': quantity}
             )
             conn.commit()
         else:
-
             cur.execute("""
                 delete from order_items
                 where order_id=%s
                 and product_id=%s
             """, (order_id, product_id))
 
+    # --- установка статуса ---
+    if is_approved:
+        new_status = 4  # Утвержден
+    else:
+        new_status = 2  # Черновик
+
     cur.execute("""
         update orders
-        set status_id = 2
+        set status_id = %s
         where order_id = %s
-        and status_id = 1
-    """, (order_id,))
+    """, (new_status, order_id))
     
     conn.commit()
     cur.close()
