@@ -1,0 +1,367 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Справочник товаров{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <!-- Заголовок -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="mb-0">Справочник товаров</h4>
+            <small class="text-muted">Управление категориями и товарами</small>
+        </div>
+        <div>
+            <button class="btn btn-primary me-2"
+                    data-bs-toggle="modal"
+                    data-bs-target="#productModal"
+                    id="addProductBtn">
+                + Товар
+            </button>
+
+            <button class="btn btn-outline-secondary"
+                    data-bs-toggle="modal"
+                    data-bs-target="#categoryModal"
+                    id="addCategoryBtn">
+                + Категория
+            </button>
+        </div>
+    </div>
+
+    <!-- Фильтры -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-center">
+
+                <div class="col-md-3">
+                    <select name="category_id" class="form-select">
+                        <option value="">Все категории</option>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}"
+                                {% if request.args.get('category_id') == category.id|string %}selected{% endif %}>
+                                {{ category.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-4">
+                    <input type="text"
+                           name="search"
+                           class="form-control"
+                           placeholder="Поиск по товару..."
+                           value="{{ request.args.get('search', '') }}">
+                </div>
+
+                <div class="col-md-2">
+                    <div class="form-check">
+                        <input class="form-check-input"
+                               type="checkbox"
+                               name="active_only"
+                               value="1"
+                               {% if active_only == '1' %}checked{% endif %}>
+                        <label class="form-check-label">
+                            Только активные
+                        </label>
+                    </div>
+                </div>
+
+                <div class="col-md-3 text-end">
+                    <button type="submit" class="btn btn-primary">Применить</button>
+                    <a href="{{ url_for('admin.products') }}" class="btn btn-outline-secondary">Сброс</a>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <!-- Таблица товаров -->
+    <div class="card">
+        <div class="card-body p-0">
+
+            {% if products %}
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Категория</th>
+                        <th>Товар</th>
+                        <th>Ед.</th>
+                        <th>Статус</th>
+                        <th class="text-end">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr class="{% if not p.is_active %}table-secondary{% endif %}">
+                        <td>{{ p.category_name }}</td>
+                        <td>{{ p.product_name }}</td>
+                        <td>{{ p.measure_name }}</td>
+                        <td>
+                            {% if p.is_active %}
+                                <span class="badge bg-success">Активен</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Отключен</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+
+                            <!-- EDIT -->
+                            <button class="btn btn-sm btn-outline-primary edit-product-btn"
+                                    data-id="{{ p.product_category_id }}"
+                                    data-name="{{ p.product_name }}"
+                                    data-category="{{ p.category_id }}"
+                                    data-measure="{{ p.measure_name }}"
+                                    data-active="{{ p.is_active }}"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#productModal">
+                                ✏️
+                            </button>
+
+                            <!-- TOGGLE -->
+                            <form method="post"
+                                  action="{{ url_for('admin.toggle_product', product_id=p.product_id) }}?{{ request.query_string|safe }}"
+                                  style="display:inline;">
+                                {% if p.is_active %}
+                                <button class="btn btn-sm btn-outline-danger"
+                                        onclick="return confirm('Отключить товар?')">
+                                    Отключить
+                                </button>
+                                {% else %}
+                                <button class="btn btn-sm btn-outline-success">
+                                    Включить
+                                </button>
+                                {% endif %}
+                            </form>
+
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-center p-4">
+                <p class="mb-2">Товары не найдены</p>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal">
+                    Добавить первый товар
+                </button>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+
+<!-- ===================== -->
+<!-- МОДАЛКА ТОВАРА -->
+<!-- ===================== -->
+
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" id="productForm" class="modal-content">
+            <input type="hidden" name="search" value="{{ request.args.get('search', '') }}">
+            <input type="hidden" name="category_id_filter" value="{{ request.args.get('category_id', '') }}">
+            <input type="hidden" name="active_only_filter" value="{{ request.args.get('active_only', '') }}">
+            <input type="hidden" name="product_id" id="product_id">
+
+            <div class="modal-header">
+                <h5 class="modal-title">Товар</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <div class="mb-3">
+                    <label class="form-label">Категория</label>
+                    <select class="form-select" name="category_id" id="product_category_id" required>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Название</label>
+                    <input type="text" class="form-control" name="name" id="product_name" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Ед. измерения</label>
+                    <select class="form-select" name="measure" id="product_measure">
+                        <option value="шт">шт</option>
+                        <option value="кг">кг</option>
+                        <option value="упак">упак</option>
+                    </select>
+                </div>
+
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="product_active" checked>
+                    <label class="form-check-label">
+                        Активен
+                    </label>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<!-- ===================== -->
+<!-- МОДАЛКА КАТЕГОРИИ -->
+<!-- ===================== -->
+
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" id="categoryForm" class="modal-content">
+            <input type="hidden" name="search" value="{{ request.args.get('search', '') }}">
+            <input type="hidden" name="category_id_filter" value="{{ request.args.get('category_id', '') }}">
+            <input type="hidden" name="active_only_filter" value="{{ request.args.get('active_only', '') }}">
+            <input type="hidden" name="category_id" id="category_id_hidden">
+
+            <div class="modal-header">
+                <h5 class="modal-title">Категория</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <div class="mb-3">
+                    <label class="form-label">Название</label>
+                    <input type="text" class="form-control" name="name" id="category_name" required>
+                </div>
+
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="category_active" checked>
+                    <label class="form-check-label">
+                        Активна
+                    </label>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        Категории
+    </div>
+    <div class="card-body p-0">
+
+        {% if categories %}
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Название</th>
+                    <th>Статус</th>
+                    <th class="text-end">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in categories %}
+                <tr class="{% if not c.is_active %}table-secondary{% endif %}">
+                    <td>{{ c.name }}</td>
+                    <td>
+                        {% if c.is_active %}
+                            <span class="badge bg-success">Активна</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Отключена</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+
+                        <!-- EDIT -->
+                        <button class="btn btn-sm btn-outline-primary edit-category-btn"
+                                data-id="{{ c.id }}"
+                                data-name="{{ c.name }}"
+                                data-active="{{ c.is_active }}"
+                                data-bs-toggle="modal"
+                                data-bs-target="#categoryModal">
+                            ✏️
+                        </button>
+
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-3 text-center">
+            Нет категорий
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+
+<!-- ===================== -->
+<!-- JS -->
+<!-- ===================== -->
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    // ===== ТОВАР =====
+    const productForm = document.getElementById("productForm");
+
+    document.querySelectorAll(".edit-product-btn").forEach(btn => {
+        btn.addEventListener("click", function () {
+
+            document.getElementById("product_id").value = this.dataset.id;
+            document.getElementById("product_name").value = this.dataset.name;
+            document.getElementById("product_category_id").value = this.dataset.category;
+            document.getElementById("product_measure").value = this.dataset.measure;
+
+            document.getElementById("product_active").checked =
+                (this.dataset.active === "True" || this.dataset.active === "true");
+
+            productForm.action = "/admin/products/update";
+        });
+    });
+
+    document.getElementById("addProductBtn").addEventListener("click", function () {
+        productForm.reset();
+        document.getElementById("product_id").value = "";
+        productForm.action = "/admin/products/add";
+    });
+
+
+    // ===== КАТЕГОРИЯ =====
+    const categoryForm = document.getElementById("categoryForm");
+
+    document.getElementById("addCategoryBtn").addEventListener("click", function () {
+        categoryForm.reset();
+        document.getElementById("category_id_hidden").value = "";
+        categoryForm.action = "/admin/categories/add";
+    });
+
+    document.querySelectorAll(".edit-category-btn").forEach(btn => {
+    btn.addEventListener("click", function () {
+
+        document.getElementById("category_id_hidden").value = this.dataset.id;
+        document.getElementById("category_name").value = this.dataset.name;
+
+        document.getElementById("category_active").checked =
+            (this.dataset.active === "True" || this.dataset.active === "true");
+
+        document.getElementById("categoryForm").action = "/admin/categories/update";
+    });
+});
+
+
+});
+</script>
+
+{% endblock %}

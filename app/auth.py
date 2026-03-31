@@ -24,3 +24,11 @@ def point_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("main.index"))
+        return f(*args, **kwargs)
+    return decorated

@@ -1,0 +1,163 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Админка{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <!-- Заголовок -->
+    <div class="mb-4">
+        <h4 class="mb-1">Панель администратора</h4>
+        <div class="text-muted">Сводка на сегодня</div>
+    </div>
+
+    <!-- KPI блок -->
+    <div class="row g-3 mb-4">
+
+        <!-- Заказы сегодня -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <div class="text-muted small mb-2">Заказы сегодня</div>
+                    <div class="fs-2 fw-bold">{{ orders_today }}</div>
+                    <div class="small text-muted mt-2">Всего создано</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Черновики -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <div class="text-muted small mb-2">Черновики</div>
+                    <div class="fs-2 fw-bold">{{ drafts_count }}</div>
+                    <div class="small text-muted mt-2">Требуют проверки</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Утверждено -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <div class="text-muted small mb-2">Утверждено</div>
+                    <div class="fs-2 fw-bold">{{ approved_count }}</div>
+                    <div class="small text-muted mt-2">Готово к обработке</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Списания сегодня -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <div class="text-muted small mb-2">Списания сегодня</div>
+                    <div class="fs-2 fw-bold">{{ disposals_today }}</div>
+                    <div class="small text-muted mt-2">Зафиксированы</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+<!-- Быстрые действия -->
+<div class="mb-4">
+    <h5 class="mb-3">Быстрые действия</h5>
+
+    <div class="row g-3">
+
+        <!-- Товары -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card h-100 border-0 card-hover bg-primary-subtle">
+                <div class="card-body position-relative d-flex flex-column">
+
+                    <div class="mb-3">
+                        <i class="bi bi-box-seam fs-3 text-primary"></i>
+                    </div>
+
+                    <h6 class="card-title">Товары</h6>
+
+                    <p class="text-muted small flex-grow-1">
+                        Управление справочником товаров
+                    </p>
+                    <div class="fw-semibold text-primary">
+                        Открыть →
+                    </div>
+
+                    <a href="{{ url_for('admin.products') }}" class="stretched-link"></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Заказы -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm border-0 card-hover">
+                <div class="card-body position-relative">
+
+                    <div class="mb-3">
+                        <i class="bi bi-cart fs-3 text-success"></i>
+                    </div>
+
+                    <h6 class="card-title">Заказы</h6>
+
+                    <p class="text-muted small">
+                        Работа с текущими заказами
+                    </p>
+                    <div class="fw-semibold text-primary">
+                        Открыть →
+                    </div>
+                    <a href="{{ url_for('admin.orders') }}" class="stretched-link"></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Списания -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm border-0 card-hover">
+                <div class="card-body position-relative">
+
+                    <div class="mb-3">
+                        <i class="bi bi-trash fs-3 text-danger"></i>
+                    </div>
+
+                    <h6 class="card-title">Списания</h6>
+
+                    <p class="text-muted small">
+                        Учет списаний товаров
+                    </p>
+                    <div class="fw-semibold text-primary">
+                        Открыть →
+                    </div>
+                    <a href="{{ url_for('admin.disposals') }}" class="stretched-link"></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- История -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card h-100 shadow-sm border-0 card-hover">
+                <div class="card-body position-relative">
+
+                    <div class="mb-3">
+                        <i class="bi bi-clock-history fs-3 text-secondary"></i>
+                    </div>
+
+                    <h6 class="card-title">История</h6>
+
+                    <p class="text-muted small">
+                        Архив заказов и списаний
+                    </p>
+                    <div class="fw-semibold text-primary">
+                        Открыть →
+                    </div>
+                    <a href="{{ url_for('admin.history') }}" class="stretched-link"></a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+</div>
+
+{% endblock %}

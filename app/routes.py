@@ -12,7 +12,7 @@ def index():
         return render_template("login.html")
     
     if session.get("is_admin"):
-        return redirect(url_for("main.admin"))
+        return redirect(url_for("admin.dashboard"))
     
     if "point_id" not in session:
         return redirect(url_for("main.select_point"))
@@ -62,10 +62,10 @@ def login():
         return redirect("/select-point")
 
 
-@main.route("/admin")
-@login_required
-def admin():
-    return "Admin panel"
+#@main.route("/admin")
+#@login_required
+#def admin():
+#    return "Admin panel"
 
 
 @main.route("/select-point")
@@ -296,12 +296,160 @@ def save_orders():
 
     return redirect(url_for("main.orders"))
 
+
 @main.route("/disposals")
 @login_required
 @point_required
 def disposals():
-    return "Select disposals page"
+    # Получаем нужные идетификаторы из сессии
+    point_id = session["point_id"]
+    user_id = session["user_id"]
+    conn = get_db_connection()
+    cur = conn.cursor()
+    print(f"Создаем или используем старую форму списаний для полльзователя в точке {point_id}")
 
+        ## В этой функции мы определяем, создается новый заказ или используется старый
+    cur.execute(
+        "select * from get_or_create_disposal(%s,%s)",
+        (point_id,user_id)
+    )
+    ## Запоминаем заказ и его статус
+    disposal_id, status_id = cur.fetchone()
+    
+
+    conn.commit()
+
+    ## Получаем список всех продуктов
+    cur.execute("""
+        select
+            product_category_id
+        ,   category_name
+        ,   product_id
+        ,   product_name
+        ,   measure_name    
+        from v_get_products
+    """)
+
+    products = cur.fetchall()
+
+    ## Получаем текущие позиции в заказе
+    cur.execute(
+        "select product_id,  quantity from get_current_disposal_products(%s)",
+        (disposal_id,)
+    )
+
+    quantities = dict(cur.fetchall())
+
+    categories = {}
+
+    for cat_id, cat_name, prod_id, prod_name, measure in products:
+        
+        ## Добавляем только категории в словарь
+        if cat_id not in categories:
+            categories[cat_id] = {
+                "name": cat_name,
+                "products": []
+            }
+
+        ## Получаем количество уже учтенных товаров
+        quantity = quantities.get(prod_id, "")
+
+        ## Формирую результирующую выборку. 
+        categories[cat_id]["products"].append({
+            "product_id": prod_id,
+            "name": prod_name,
+            "measure": measure,
+            "quantity": quantity
+        })
+
+    cur.close()
+    
+    conn.close()
+
+    return render_template(
+        "disposals.html",
+        categories=categories,
+        disposal_id=disposal_id,
+        status_id=status_id
+    )
+
+@main.route("/save_disposals", methods=["POST"])
+@login_required
+@point_required
+def save_disposals():
+
+    ## Процедура сохранения заказа
+    disposal_id = int(request.form.get("disposal_id"))
+    is_approved = request.form.get("is_approved")  # галка
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    ## Получаем текущий статус заказа
+    cur.execute(
+        "select status_id from get_disposal_status_id(%s)",
+        (disposal_id,)
+    )
+
+    status_id = cur.fetchone()[0]
+
+    ## Статус = 3 это финальный статус. Возвращаем на страницу с заказами.
+    if status_id  != 2:
+        cur.close()
+        conn.close()
+        return redirect(url_for("main.disposals"))
+
+    for key, value in request.form.items():
+        
+        ## Построково обрабатываем форму, нас интересуют те строки, которые начинаются с
+        ## product_
+        if not key.startswith("product_"):
+            continue
+        
+        
+        product_id = int(key.split("_")[1])  
+        value = value.strip()
+
+        if value == "":
+            quantity = 0
+        else:
+            quantity = round(float(value), 2)
+
+        quantity = round(quantity, 2)
+        print(f"Для заказа {disposal_id}, отметили продукт с идетификатором {product_id} в количестве {quantity}")
+        
+        ## Если что то добавилось, мы это добавляем 
+        if quantity > 0:
+            print('Вызов процедуроы')
+            cur.execute(
+                "call add_info_product_disposal(%(disposal_id)s, %(product_id)s, %(quantity)s)",
+                {'disposal_id': disposal_id, 'product_id': product_id, 'quantity': quantity}
+            )
+            conn.commit()
+        else:
+            cur.execute("""
+                delete from disposal_items
+                where disposal_id=%s
+                and product_id=%s
+            """, (disposal_id, product_id))
+
+    # --- установка статуса ---
+    if is_approved:
+        new_status = 4  # Утвержден
+    else:
+        new_status = 2  # Черновик
+
+    cur.execute("""
+        update disposals
+        set status_id = %s
+        where disposal_id = %s
+    """, (new_status, disposal_id))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return redirect(url_for("main.disposals"))
 
 @login_required
 @main.route("/logout")

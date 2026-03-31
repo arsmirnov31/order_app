@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{% block title %}Админ панель{% endblock %}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet">
+</head>
+
+<body class="bg-light">
+
+<!-- NAVBAR -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+
+        <a class="navbar-brand" href="{{ url_for('admin.dashboard') }}">
+            Админка
+        </a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#adminNavbar">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="adminNavbar">
+
+            <!-- ЛЕВОЕ МЕНЮ -->
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+
+                <!-- Справочники -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button"
+                       data-bs-toggle="dropdown">
+                        Справочники
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li>
+                            <a class="dropdown-item"
+                               href="{{ url_for('admin.products') }}">
+                                Товары
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="#">
+                                Точки
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="#">
+                                Пользователи
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
+                <!-- Операции -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#"
+                       data-bs-toggle="dropdown">
+                        Операции
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li>
+                            <a class="dropdown-item"
+                               href="{{ url_for('admin.orders') }}">
+                                Заказы
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="#">
+                                Списания
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
+                <!-- История -->
+                <li class="nav-item">
+                    <a class="nav-link"
+                       href="{{ url_for('admin.history') }}">
+                        История
+                    </a>
+                </li>
+
+            </ul>
+
+            <!-- ПРАВАЯ ЧАСТЬ -->
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <span class="navbar-text me-3">
+                        {{ session.get('user_id') }}
+                    </span>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.logout') }}">
+                        Выход
+                    </a>
+                </li>
+            </ul>
+
+        </div>
+    </div>
+</nav>
+
+<!-- CONTENT -->
+<div class="container mt-4">
+    {% block content %}
+    {% endblock %}
+</div>
+<style>
+    .card-hover {
+        transition: all 0.2s ease-in-out;
+        cursor: pointer;
+    }
+    
+    .card-hover:hover {
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 .75rem 1.5rem rgba(0,0,0,.1);
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="alert alert-{{ category }} mt-2">
+        {{ message }}
+    </div>
+  {% endfor %}
+{% endwith %}
+
+
+</body>
+</html>
