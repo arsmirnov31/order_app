@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}История заказов{% endblock %}
+
+{% block content %}
+
+<div class="card mt-4">
+    <div class="card-body">
+
+        <h4 class="mb-3">История заказов</h4>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Статус</th>
+                        <th>Позиций</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in orders %}
+                        <tr>
+                            <td>{{ o.order_date.strftime('%d.%m.%Y') }}</td>
+
+                            <td>
+                                {% if o.status_id == 3 %}
+                                    <span class="badge bg-secondary">Отправлен</span>
+                                {% elif o.status_id == 4 %}
+                                    <span class="badge bg-success">Утвержден</span>
+                                {% elif o.status_id == 5 %}
+                                    <span class="badge bg-warning text-dark">Проверка</span>
+                                {% elif o.status_id == 6 %}
+                                    <span class="badge bg-primary">Принят</span>
+                                {% elif o.status_id == 7 %}
+                                    <span class="badge bg-dark">Исполнен</span>
+                                {% endif %}
+                            </td>
+
+                            <td>{{ o.items_count }}</td>
+
+                            <td class="text-end">
+                                <a href="{{ url_for('main.order_view', order_id=o.order_id) }}"
+                                class="btn btn-sm btn-primary">
+                                    Открыть
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
