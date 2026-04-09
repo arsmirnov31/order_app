@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session
+from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 from .db import get_db_connection
 from .auth import login_required, point_required
 
@@ -52,8 +52,6 @@ def login():
     session["user_id"] = user_id
     session["is_admin"] = is_admin
 
-    print("LOGIN:", login)
-    print("PASSWORD:", password)
 
     # редирект
     if is_admin:
@@ -158,10 +156,10 @@ def orders():
     ## В этой функции мы определяем, создается новый заказ или используется старый
     cur.execute(
         "select * from get_or_create_order(%s,%s)",
-        (point_id, user_id)
+        (point_id, user_id )
     )
     ## Запоминаем заказ и его статус
-    order_id, status_id = cur.fetchone()
+    order_id, status_id, order_date = cur.fetchone()
     
     ## Получаем список всех продуктов
     conn.commit()
@@ -215,7 +213,8 @@ def orders():
         "orders.html",
         categories=categories,
         order_id=order_id,
-        status_id=status_id
+        status_id=status_id,
+        order_date = order_date,
     )
 
 @main.route("/orders/save", methods=["POST"])
@@ -238,8 +237,8 @@ def save_orders():
 
     status_id = cur.fetchone()[0]
 
-    ## Статус = 3 это финальный статус. Возвращаем на страницу с заказами.
-    if status_id  != 2:
+
+    if status_id  not in (1,2):
         cur.close()
         conn.close()
         return redirect(url_for("main.orders"))
@@ -280,9 +279,9 @@ def save_orders():
 
     # --- установка статуса ---
     if is_approved:
-        new_status = 4  # Утвержден
+        new_status = 3  # Заказ отправлен на утверждение
     else:
-        new_status = 2  # Черновик
+        new_status = 2  # Заказ в процессе создания
 
     cur.execute("""
         update orders
@@ -394,7 +393,7 @@ def save_disposals():
     status_id = cur.fetchone()[0]
 
     ## Статус = 3 это финальный статус. Возвращаем на страницу с заказами.
-    if status_id  != 2:
+    if status_id  not in  (1,2):
         cur.close()
         conn.close()
         return redirect(url_for("main.disposals"))
@@ -435,9 +434,9 @@ def save_disposals():
 
     # --- установка статуса ---
     if is_approved:
-        new_status = 4  # Утвержден
+        new_status = 3  # Списание в  процессе создания
     else:
-        new_status = 2  # Черновик
+        new_status = 2  # Списание отправлено на утверждение
 
     cur.execute("""
         update disposals
@@ -450,6 +449,251 @@ def save_disposals():
     conn.close()
 
     return redirect(url_for("main.disposals"))
+
+
+@login_required
+@point_required
+@main.route("/order_history")
+def order_history():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        select order_id, order_date, status_id
+        from orders
+        where point_id = %s
+          and status_id >= 3
+        order by order_date desc
+    """, (session["point_id"],))
+
+    orders = cur.fetchall()
+
+    result = []
+
+    for o in orders:
+        order_id, order_date, status_id = o
+
+        # считаем через функцию
+        cur.execute("""
+            select count(*) 
+            from get_order_items(%s)
+        """, (order_id,))
+
+        count = cur.fetchone()[0]
+
+        result.append({
+            "order_id": order_id,
+            "order_date": order_date,
+            "status_id": status_id,
+            "items_count": count
+        })
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "order_history.html",
+        orders=result
+    )
+
+@main.route("/order/<int:order_id>", methods=["GET", "POST"])
+@login_required
+@point_required
+def order_view(order_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # --- POST ---
+    if request.method == "POST":
+
+        cur.execute("""
+            select status_id
+            from orders
+            where order_id = %s
+              and point_id = %s
+        """, (order_id, session["point_id"]))
+
+        current_status = cur.fetchone()[0]
+
+        if current_status != 5:
+            flash("Редактирование запрещено", "danger")
+            return redirect(url_for("main.order_view", order_id=order_id))
+
+        action = request.form.get("action")
+
+        # --- обновление существующих ---
+        for key, value in request.form.items():
+            if key.startswith("delivered_"):
+
+                product_id = int(key.replace("delivered_", ""))
+
+                if not value:
+                    continue
+
+                try:
+                    delivered = float(value)
+                except:
+                    continue
+
+                cur.execute("""
+                    update order_items
+                    set delivered_quantity = %s
+                    where order_id = %s
+                      and product_id = %s
+                """, (delivered, order_id, product_id))
+
+        # --- новые ---
+        new_items = {}
+
+        for key, value in request.form.items():
+
+            if key.startswith("new_product_id_"):
+                idx = key.replace("new_product_id_", "")
+                new_items[idx] = {"product_id": value}
+
+            elif key.startswith("new_delivered_"):
+                idx = key.replace("new_delivered_", "")
+                if idx not in new_items:
+                    new_items[idx] = {}
+                new_items[idx]["delivered"] = value
+
+        for item in new_items.values():
+
+            product_id = item.get("product_id")
+            delivered = item.get("delivered")
+
+            if not product_id or not delivered:
+                continue
+
+            try:
+                delivered = float(delivered)
+            except:
+                continue
+
+            cur.execute("""
+                insert into order_items
+                    (order_id, product_id, quantity, delivered_quantity, is_extra_item)
+                values (%s, %s, 0, %s, true)
+                on conflict (order_id, product_id)
+                do update set delivered_quantity = excluded.delivered_quantity
+            """, (order_id, product_id, delivered))
+
+        # --- удаление лишнего ---
+        cur.execute("""
+            delete from order_items
+            where order_id = %s
+              and delivered_quantity = 0
+              and is_extra_item = true
+        """, (order_id,))
+
+        # --- принятие ---
+        if action == "accept":
+            cur.execute("""
+                update orders
+                set status_id = 6
+                where order_id = %s
+            """, (order_id,))
+
+            conn.commit()
+            flash("Заказ принят", "success")
+            return redirect(url_for("main.order_history"))
+
+        conn.commit()
+        flash("Сохранено", "success")
+
+    # --- GET ---
+    cur.execute("""
+        select order_id, order_date, status_id
+        from orders
+        where order_id = %s
+          and point_id = %s
+    """, (order_id, session["point_id"]))
+
+    order = cur.fetchone()
+
+    order_id, order_date, status_id = order
+
+    cur.execute("""
+        select 
+            c.product_category_id,
+            c.name,
+            p.product_id,
+            p.name,
+            oi.quantity,
+            oi.delivered_quantity,
+            u.name,
+            oi.is_extra_item
+        from order_items oi
+        join products p on oi.product_id = p.product_id
+        join product_categories c on p.product_category_id = c.product_category_id
+        join unit_of_measure u on p.measure_id = u.measure_id
+        where oi.order_id = %s
+        order by 
+            c.sort_order nulls last,
+            c.name,
+            p.sort_order nulls last,
+            p.name
+    """, (order_id,))
+
+    items = cur.fetchall()
+
+    grouped = {}
+
+    for i in items:
+        cat_id = i[0]
+        cat_name = i[1]
+
+        if cat_id not in grouped:
+            grouped[cat_id] = {
+                "name": cat_name,
+                "products": []
+            }
+
+        grouped[cat_id]["products"].append(i)
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "order_view.html",
+        order_id=order_id,
+        order_date=order_date,
+        status_id=status_id,
+        grouped_items=grouped
+    )
+
+
+@main.route("/api/products")
+@login_required
+@point_required
+def search_products():
+
+    query = request.args.get("q", "")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        select product_id, name
+        from products
+        where is_active = true
+          and lower(name) like lower(%s)
+        order by name
+        limit 20
+    """, (f"%{query}%",))
+
+    products = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    result = [
+        {"id": p[0], "name": p[1]}
+        for p in products
+    ]
+
+    return result
 
 @login_required
 @main.route("/logout")
