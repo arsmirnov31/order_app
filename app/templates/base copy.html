@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{% block title %}Система учета заказов{% endblock %}</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet">
+
+</head>
+
+<body class="bg-light">
+
+{% if session.user_id %}
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+
+        <a class="navbar-brand" href="{{ url_for('main.orders') }}">
+            Система заказов
+        </a>
+
+        <div class="collapse navbar-collapse">
+
+            <ul class="navbar-nav me-auto">
+
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.orders') }}">
+                        Заказы
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.disposals') }}">
+                        Списания
+                    </a>
+                </li>
+
+            </ul>
+
+            <span class="navbar-text text-white me-3">
+
+                {% if session.point_name %}
+                    Точка: {{ session.point_name }}
+                {% endif %}
+
+            </span>
+
+            <a class="btn btn-outline-light me-2"
+               href="{{ url_for('main.select_point') }}">
+                Изменить точку
+            </a>
+
+            <a class="btn btn-outline-light"
+               href="{{ url_for('main.logout') }}">
+                Выйти из системы
+            </a>
+
+        </div>
+
+    </div>
+</nav>
+
+{% endif %}
+
+<div class="container mt-4">
+
+    {% block content %}
+    {% endblock %}
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

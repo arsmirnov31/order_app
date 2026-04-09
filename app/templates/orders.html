@@ -14,17 +14,17 @@
             </div>
 
             <div class="col-md-4">
-                <strong>Дата: "{{ order_date }}"</strong>
+                <strong>Дата:</strong>
             </div>
 
             <div class="col-md-4">
                 <strong>Статус:</strong>
-                {% if status_id == 1 %}
-                    Новый заказ
-                {% elif status_id == 2 %}
-                    Заказ в процессе создания
+                {% if status_id == 2 %}
+                    Черновик
+                {% elif status_id == 4 %}
+                    Утвержден (ожидает проверки)
                 {% elif status_id == 3 %}
-                    Заказ отправлен на утверждение
+                    Согласован
                 {% endif %}
             </div>
 
@@ -79,7 +79,7 @@
 
                                 {% if product.quantity %}
                                     {% if product.measure == 'шт' %}
-                                        value="{{ product.quantity|float }}"
+                                        value="{{ product.quantity|int }}"
                                     {% else %}
                                         value="{{ product.quantity|float }}"
                                     {% endif %}
@@ -88,12 +88,12 @@
                                 {% if product.measure == 'шт' %}
                                     step="1"
                                 {% else %}
-                                    step="0.1"
+                                    step="0.01"
                                 {% endif %}
 
                                 min="0"
 
-                                {% if status_id not in (1,2) %}
+                                {% if status_id in (3,4) %}
                                     readonly
                                 {% endif %}
                             >
@@ -123,7 +123,7 @@
 
 </div>
 
-{% if status_id in (1,2) %}
+{% if status_id == 2 %}
 
 <div class="mt-4 d-flex justify-content-between align-items-center">
 
