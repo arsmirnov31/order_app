@@ -1,0 +1,72 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Точки{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+    <h4>Точки</h4>
+    <a href="{{ url_for('admin.create_point') }}" class="btn btn-primary btn-sm">
+        + Добавить
+    </a>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+
+    <div class="col-md-4">
+        <input type="text" name="search" class="form-control"
+               placeholder="Поиск..."
+               value="{{ search }}">
+    </div>
+
+    <div class="col-md-3 form-check mt-2">
+        <input class="form-check-input" type="checkbox" name="active_only"
+               {% if active_only %}checked{% endif %}>
+        <label class="form-check-label">Только активные</label>
+    </div>
+
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary btn-sm">
+            Найти
+        </button>
+    </div>
+
+</form>
+
+<table class="table table-sm table-bordered">
+
+    <thead>
+        <tr>
+            <th>Название</th>
+            <th style="width:120px;">Статус</th>
+            <th style="width:120px;">Действия</th>
+        </tr>
+    </thead>
+
+    <tbody>
+    {% for p in points %}
+        <tr {% if not p[2] %}class="table-secondary"{% endif %}>
+            <td>{{ p[1] }}</td>
+
+            <td>
+                <form method="post"
+                      action="{{ url_for('admin.toggle_point', point_id=p[0]) }}?{{ request.query_string|safe }}">
+                    <button class="btn btn-sm {% if p[2] %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                        {% if p[2] %}Активна{% else %}Отключена{% endif %}
+                    </button>
+                </form>
+            </td>
+
+            <td>
+                <a href="{{ url_for('admin.edit_point', point_id=p[0]) }}"
+                   class="btn btn-sm btn-warning">
+                    ✏️
+                </a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+
+</table>
+
+{% endblock %}

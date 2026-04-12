@@ -1,0 +1,38 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Точка{% endblock %}
+
+{% block content %}
+
+<div class="card mt-4">
+    <div class="card-body">
+
+        <h4 class="mb-3">
+            {% if point %}Редактирование{% else %}Новая точка{% endif %}
+        </h4>
+
+        <form method="post">
+
+            <div class="mb-3">
+                <label class="form-label">Название</label>
+                <input type="text"
+                       name="name"
+                       class="form-control"
+                       required
+                       value="{{ point[1] if point else '' }}">
+            </div>
+
+            <button type="submit" class="btn btn-success btn-sm">
+                Сохранить
+            </button>
+
+            <a href="{{ url_for('admin.points') }}" class="btn btn-secondary btn-sm">
+                Назад
+            </a>
+
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}
