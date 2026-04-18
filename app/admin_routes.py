@@ -857,7 +857,6 @@ def orders():
             count(oi.order_item_id) as items_count,
             coalesce(sum(oi.quantity), 0) as total_quantity,
             current_date - o.order_date as order_age
-            --,is_extra_item
         from orders o
         join points p
             on p.point_id = o.point_id
@@ -905,7 +904,7 @@ def orders():
 
     cur.execute(sql, params)
     orders_rows = cur.fetchall()
-    print(orders_rows)
+    
     no_order_sql = """
         select
             p.point_id,
@@ -1161,18 +1160,331 @@ def set_order_status(order_id, status_id):
     return redirect(url_for("admin.order_edit", order_id=order_id))
 
 
-@admin.route('/create_order')
-@admin_required
-@login_required
-def create_order():
-    return render_template('admin/create_order.html')
-
 
 @admin.route('/disposals')
 @admin_required
 @login_required
 def disposals():
-    return render_template('admin/disposals.html')
+    status_filter = request.args.get("status", "").strip()
+    point_filter = request.args.get("point", "").strip()
+    hide_completed = request.args.get("hide_completed", "0").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    sql = """
+        select 
+            d.disposal_id
+        ,	d.point_id
+        ,	p.name 					        as point_name
+        ,	d.disposal_date
+        ,	d.status_id
+        ,	ds.name					        as status_name
+        ,	d.user_id
+        ,	count(di.disposal_item_id)      as items_count
+        ,	current_date -  d.disposal_date as disposal_age 
+        from
+                disposals as d
+            join points p on d.point_id = p.point_id
+            join disposals_status as ds on d.status_id = ds.status_id
+            join disposal_items as di on di.disposal_id = d.disposal_id
+            """
+
+    params = []
+
+    if status_filter:
+        sql += " and d.status_id = %s"
+        params.append(status_filter)
+
+    if point_filter:
+        sql += " and p.name ilike %s"
+        params.append(f"%{point_filter}%")
+
+    if hide_completed == "1":
+        sql += " and lower(os.name) not in ('заказ исполнен', 'исполнен')"
+
+    if date_from:
+        sql += " and o.disposal_date >= %s"
+        params.append(date_from)
+
+    if date_to:
+        sql += " and o.disposal_date <= %s"
+        params.append(date_to)
+
+    sql += """
+        group by
+            d.disposal_id,
+            d.point_id,
+            p.name,
+            d.disposal_date,
+            d.status_id,
+            ds.name,
+            d.user_id
+        order by
+            d.disposal_date desc,
+            p.name asc
+    """
+
+    cur.execute(sql, params)
+    disposals_rows = cur.fetchall()
+    
+    no_disposal_sql = """
+        select
+            p.point_id,
+            p.name as point_name
+        from points p
+        where p.is_active = true
+          and not exists (
+              select 1
+              from disposals d
+              where d.point_id = p.point_id
+          )
+    """
+
+
+    no_disposal_params = []
+
+    if point_filter:
+        no_disposal_sql += " and p.name ilike %s"
+        no_disposal_params.append(f"%{point_filter}%")
+
+    no_disposal_sql += " order by p.name asc"
+
+    cur.execute(no_disposal_sql, no_disposal_params)
+    no_disposal_rows = cur.fetchall()
+
+    status_sql = """
+            select
+                status_id,
+                name
+            from disposals_status
+            order by status_id
+        """
+    cur.execute(status_sql)
+    statuses = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/disposals.html",
+        disposals_rows=disposals_rows,
+        no_disposal_rows=no_disposal_rows,
+        statuses=statuses,
+        status_filter=status_filter,
+        point_filter=point_filter,
+        hide_completed=hide_completed,
+        date_from=date_from,
+        date_to=date_to
+    )
+
+
+
+@admin.route('/disposal_edit/<int:disposal_id>', methods=['GET', 'POST'])
+@admin_required
+@login_required
+def disposal_edit(disposal_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if request.method == "POST":
+
+        print("FORM:", request.form)
+
+        items = []
+
+        # =========================
+        # СУЩЕСТВУЮЩИЕ ТОВАРЫ
+        # =========================
+        for key, value in request.form.items():
+            if key.startswith("quantity_"):
+
+                product_id = key.replace("quantity_", "")
+
+                try:
+                    product_id = int(product_id)
+                    quantity = float(value)
+                except:
+                    continue
+
+                items.append({
+                    "product_id": product_id,
+                    "quantity": quantity
+                })
+
+        # =========================
+        # НОВЫЕ ТОВАРЫ
+        # =========================
+        for key in request.form:
+            if key.startswith("new_product_id_"):
+
+                index = key.replace("new_product_id_", "")
+
+                product_id = request.form.get(f"new_product_id_{index}")
+                quantity = request.form.get(f"new_quantity_{index}", "0")
+
+                try:
+                    product_id = int(product_id)
+                    quantity = float(quantity)
+                except:
+                    continue
+
+                items.append({
+                    "product_id": product_id,
+                    "quantity": quantity
+                })
+
+        print("ITEMS:", items)
+
+        # =========================
+        # UPSERT ЛОГИКА
+        # =========================
+        for item in items:
+
+            product_id = item["product_id"]
+            quantity = item["quantity"]
+
+            cur.execute("""
+                select disposal_item_id
+                from disposal_items
+                where disposal_id = %s and product_id = %s
+            """, (disposal_id, product_id))
+
+            existing = cur.fetchone()
+
+            if quantity <= 0:
+                if existing:
+                    cur.execute("""
+                        delete from disposal_items
+                        where disposal_id = %s and product_id = %s
+                    """, (disposal_id, product_id))
+                continue
+
+            if existing:
+                cur.execute("""
+                    update disposal_items
+                    set quantity = %s
+                    where disposal_id = %s and product_id = %s
+                """, (quantity, disposal_id, product_id))
+            else:
+                cur.execute("""
+                    insert into disposal_items (
+                        disposal_id,
+                        product_id,
+                        quantity
+                    )
+                    values (%s, %s, %s)
+                """, (disposal_id, product_id, quantity))
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        flash("Списание сохранено", "success")
+        return redirect(url_for("admin.disposal_edit", disposal_id=disposal_id))
+
+    # =========================
+    # GET (ОТКРЫТИЕ)
+    # =========================
+
+    cur.execute("""
+        select
+            d.disposal_id,
+            d.disposal_date,
+            d.status_id,
+            ds.name as status_name,
+            p.name as point_name
+        from disposals d
+        join points p on p.point_id = d.point_id
+        join disposals_status ds on ds.status_id = d.status_id
+        where d.disposal_id = %s
+    """, (disposal_id,))
+
+    disposal = cur.fetchone()
+
+    if not disposal:
+        cur.close()
+        conn.close()
+        return "Списание не найдено", 404
+
+    cur.execute("""
+        select
+            p.product_id,
+            p.name as product_name,
+            di.quantity,
+            pc.product_category_id,
+            pc.name as category_name,
+            um.name as measure_name
+        from disposal_items di
+        join products p on di.product_id = p.product_id
+        join product_categories pc on p.product_category_id = pc.product_category_id
+        join unit_of_measure um on um.measure_id = p.measure_id
+        where di.disposal_id = %s
+        order by pc.sort_order, p.sort_order
+    """, (disposal_id,))
+
+    items_raw = cur.fetchall()
+
+    categories = {}
+    disposal_categories = []
+
+    for item in items_raw:
+        cat_id = item["product_category_id"]
+
+        if cat_id not in categories:
+            categories[cat_id] = {
+                "name": item["category_name"],
+                "items": []
+            }
+            disposal_categories.append(cat_id)
+
+        categories[cat_id]["items"].append(item)
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/disposal_edit.html",
+        disposal=disposal,
+        categories=categories,
+        disposal_categories=disposal_categories
+    )
+
+
+@admin.route("/api/products")
+@admin_required
+@login_required
+def search_products():
+
+    query = request.args.get("q", "")
+    print(f"Пользователь пытается добавить новый товар в заказ")
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        select product_id, name
+        from products
+        where is_active = true
+          and lower(name) like lower(%s)
+        order by name
+        limit 20
+    """, (f"%{query}%",))
+
+    products = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    result = [
+        {"id": p[0], "name": p[1]}
+        for p in products
+    ]
+
+    return result
 
 
 @admin.route('/history')

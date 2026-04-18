@@ -1,7 +1,139 @@
 {% extends "admin/base_admin.html" %}
 
-{% block title %}Товары{% endblock %}
+{% block title %}Списания{% endblock %}
 
 {% block content %}
-<h4>Справочник товаров</h4>
+<div class="container mt-4">
+   <h3 class="mb-3">Списания продуктов</h3>
+
+    <!-- 🔍 ФИЛЬТРЫ -->
+    <form method="get" class="row g-2 mb-3">
+
+        <div class="col-md-2">
+            <input type="date" name="date_from" value="{{ date_from }}" class="form-control">
+        </div>
+
+        <div class="col-md-2">
+            <input type="date" name="date_to" value="{{ date_to }}" class="form-control">
+        </div>
+
+        <div class="col-md-3">
+            <input type="text" name="point" value="{{ point_filter }}" placeholder="Поиск точки"
+                   class="form-control">
+        </div>
+
+        <div class="col-md-3">
+            <select name="status" class="form-select">
+                <option value="">Все статусы</option>
+                {% for s in statuses %}
+                    <option value="{{ s.status_id }}" {% if status_filter == s.status_id|string %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-2 form-check d-flex align-items-center">
+            <input type="checkbox" class="form-check-input me-2" name="hide_completed" value="1"
+                   {% if hide_completed == "1" %}checked{% endif %}>
+            <label class="form-check-label">Скрыть исполненные</label>
+        </div>
+
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                Применить
+            </button>
+        </div>
+
+    </form>
+
+    <!-- 📊 ТАБЛИЦА -->
+    <div class="table-responsive">
+       <table class="table table-bordered table-hover table-sm align-middle text-nowrap">
+
+            <thead class="table-light">
+                <tr>
+                    <th>Точка</th>
+                    <th>Дата</th>
+                    <th>Статус</th>
+                    <th>Позиций</th>
+                    <th>Возраст</th>
+                    <th>Действие</th>
+                </tr>
+            </thead>
+           <tbody>
+
+            {% for row in disposals_rows %}
+
+                {% set disposal_id = row.disposal_id %}
+                {% set point_name = row.point_name %}
+                {% set disposal_date = row.disposal_date %}
+                {% set status_name = row.status_name %}
+                {% set items_count = row.items_count %}
+                {% set disposal_age = row.disposal_age %}
+
+                <tr>
+
+                    <td>{{ point_name }}</td>
+
+                    <td>{{ disposal_date }}</td>
+
+                    <td>
+                        {% if status_name %}
+                            <span class="badge bg-light text-dark border">{{ status_name }}</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark border text-danger">{{ status_name }}</span>
+                        {% endif %}
+                    </td>
+
+                    <td>{{ items_count }}</td>
+
+                    <td>
+                        {% if disposal_age is not none %}
+                            {% if disposal_age >= 2 %}
+                                <span class="text-danger fw-bold">{{ disposal_age }}</span>
+                            {% else %}
+                                {{ disposal_age }}
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        <a href="{{ url_for('admin.disposal_edit', disposal_id=disposal_id) }}"
+                        class="btn btn-sm btn-outline-primary">
+                            Открыть
+                        </a>
+                    </td>
+
+                </tr>
+
+            {% endfor %}
+
+            <!-- ❗ ТОЧКИ БЕЗ СПИСАНИЯ -->
+            {% for row in no_disposal_rows %}
+
+                <tr class="table-warning">
+
+                    <td>{{ row.point_name }}</td>
+
+                    <td>-</td>
+
+                    <td>
+                        <span class="text-danger fw-bold">нет списания</span>
+                    </td>
+
+                    <td>0</td>
+                    <td>-</td>
+
+
+                </tr>
+
+            {% endfor %}
+            </tbody>
+
+        </table>
+    </div>
+ </div>   
 {% endblock %}
