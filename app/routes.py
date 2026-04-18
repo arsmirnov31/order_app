@@ -60,11 +60,6 @@ def login():
         return redirect("/select-point")
 
 
-#@main.route("/admin")
-#@login_required
-#def admin():
-#    return "Admin panel"
-
 
 @main.route("/select-point")
 @login_required
@@ -462,7 +457,7 @@ def order_history():
         select order_id, order_date, status_id
         from orders
         where point_id = %s
-          and status_id >= 3
+          and status_id not in (2,3)
         order by order_date desc
     """, (session["point_id"],))
 
@@ -506,7 +501,7 @@ def order_view(order_id):
 
     # --- POST ---
     if request.method == "POST":
-
+        print(f"Пользователь проверяет товар")
         cur.execute("""
             select status_id
             from orders
@@ -521,6 +516,8 @@ def order_view(order_id):
             return redirect(url_for("main.order_view", order_id=order_id))
 
         action = request.form.get("action")
+
+        print(f"Пользователь прошел проверку статуса")
 
         # --- обновление существующих ---
         for key, value in request.form.items():
@@ -541,8 +538,9 @@ def order_view(order_id):
                     set delivered_quantity = %s
                     where order_id = %s
                       and product_id = %s
-                """, (delivered, order_id, product_id))
+                """, (delivered, order_id, product_id,))
 
+        print(f"Пользователь пытается изменить для заказа {order_id}, и продукты {product_id}, значение доставленного товара {delivered}")
         # --- новые ---
         new_items = {}
 
@@ -670,7 +668,7 @@ def order_view(order_id):
 def search_products():
 
     query = request.args.get("q", "")
-
+    print(f"Пользователь пытается добавить новый товар в заказ")
     conn = get_db_connection()
     cur = conn.cursor()
 

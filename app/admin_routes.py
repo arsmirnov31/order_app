@@ -2,7 +2,7 @@ from .auth import login_required, point_required, admin_required
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from .db import get_db_connection
 import psycopg2.extras
-
+from psycopg2 import Error
 
 admin = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -258,8 +258,8 @@ def add_category():
 # UPDATE CATEGORY
 # =========================
 @admin.route('/categories/update', methods=['POST'])
-@login_required
 @admin_required
+@login_required
 def update_category():
     category_id = request.form.get("category_id")
     name = (request.form.get("name") or "").strip()
@@ -285,8 +285,8 @@ def update_category():
 
 
 @admin.route('/products/reorder', methods=['POST'])
-@login_required
 @admin_required
+@login_required
 def reorder_product():
     product_id = request.form.get("product_id")
     direction = request.form.get("direction")  # up / down
@@ -350,8 +350,8 @@ def reorder_product():
 
 
 @admin.route('/categories/reorder', methods=['POST'])
-@login_required
 @admin_required
+@login_required
 def reorder_category():
     category_id = request.form.get("category_id")
     direction = request.form.get("direction")  # up / down
@@ -414,8 +414,8 @@ def reorder_category():
 # СПИСОК ТОЧЕК
 # =========================
 @admin.route('/points')
-@login_required
 @admin_required
+@login_required
 def points():
     search = request.args.get("search", "")
     active_only = request.args.get("active_only") == "on"
@@ -554,11 +554,618 @@ def edit_point(point_id):
     return render_template("admin/point_form.html", point=point)
 
 
-@admin.route('/orders')
+@admin.route('/users')
 @admin_required
 @login_required
+def users():
+    search = request.args.get("search", "")
+    active_only = request.args.get("active_only") == "on"
+
+    print(f"От пользователя приходит следующий serach {search}")
+    print(f"Показываем ли мы удаленные объекты  {active_only}")
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    query = """
+        select
+            user_id
+        ,	login
+        ,	full_name
+        ,	is_admin
+        ,	is_active
+        from
+            bulochkin_staffs
+        where
+            1=1
+    """
+    params = []
+
+    if active_only:
+        query += " and is_active = true"
+
+    if search:
+        query += " and lower(login) like lower(%s)"
+        params.append(f"%{search}%")
+
+    query += " order by login"
+
+    cur.execute(query, params)
+    users = cur.fetchall()
+
+    cur.close()
+    conn.close()   
+
+    return render_template(
+        "admin/users.html",
+        users=users,
+        search=search,
+        active_only=active_only
+    )
+
+
+
+@admin.route('/users/toggle/<int:user_id>', methods=['POST'])
+@admin_required
+@login_required
+def toggle_users(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        update bulochkin_staffs
+        set is_active = not is_active
+        where user_id = %s
+    """, (user_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    flash("Статус пользователя обновлён", "success")
+
+    return redirect(url_for("admin.users", **request.args))
+
+@admin.route('/users/toggle_admin/<int:user_id>', methods=['POST'])
+@admin_required
+@login_required
+def toggle_admin_users(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        update bulochkin_staffs
+        set is_admin = not is_admin
+        where user_id = %s
+    """, (user_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    flash("Права пользователя обновлены", "success")
+
+    return redirect(url_for("admin.users", **request.args))
+
+
+
+@admin.route('/user/create', methods=['GET', 'POST'])
+@admin_required
+@login_required
+def create_user():
+    if request.method == 'POST':
+        login               = request.form.get("login")
+        full_name           = request.form.get("full_name")
+        admin_right         = request.form.get("admin_right")
+        password            = request.form.get("password")
+        password_confirm    = request.form.get("password_confirm")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+
+        if password != password_confirm:
+             flash("Пароль должен совпадать", "danger")
+             return render_template("admin/user_form.html", 
+                                   user=None, 
+                                   form_data=request.form)
+
+        try:
+            cur.execute(
+                "call add_user(%(p_login)s, %(p_full_name)s, %(p_password_text)s, %(p_is_admin)s)",
+                {'p_login': login, 'p_full_name': full_name, 'p_password_text': password, 'p_is_admin': False if not admin_right else True}
+            )
+            conn.commit()
+
+            flash("Новый пользователь создан", "success")
+            return redirect(url_for("admin.users", **request.args))
+
+
+        except Error as e:
+            conn.rollback()
+            flash(f"Ошибка из PostgreSQL: {e.pgerror}", "danger")
+
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template("admin/user_form.html", user=None)
+
+
+@admin.route('/user/edit/<int:user_id>', methods=['GET', 'POST'])
+@admin_required
+@login_required
+def edit_user(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if request.method == 'POST':
+        login               = request.form.get("login")
+        full_name           = request.form.get("full_name")
+        password            = request.form.get("password")
+        password_confirm    = request.form.get("password_confirm")
+        admin_right         = request.form.get("admin_right")
+        try:
+            if password: 
+                if password != password_confirm:
+                    flash("Пароль должен совпадать", "danger")
+                    return render_template("admin/user_form.html", 
+                                    user=None, 
+                                    form_data=request.form)
+                else:
+                    cur.execute("""
+                        update bulochkin_staffs
+                        set 
+                            login = %s
+                        ,   full_name = %s
+                        ,   password_hash = md5(%s)
+                        ,   is_admin = %s
+                        ,   is_active = True
+                        where user_id = %s
+                    """, (login, full_name, password, False if not admin_right else True, user_id))
+                    conn.commit()
+            else:
+                cur.execute("""
+                    update bulochkin_staffs
+                    set 
+                        login = %s
+                    ,   full_name = %s
+                    ,   is_admin = %s
+                    ,   is_active = True
+                    where user_id = %s
+                """, (login, full_name,  False if not admin_right else True, user_id))
+                conn.commit()
+
+            flash("Пользователь отредактирован", "success")
+            return redirect(url_for("admin.users"))   
+          
+        except Exception:
+            conn.rollback()
+            flash("Пользователь с таким именем уже существует", "danger")
+            return render_template("admin/user_form.html", 
+                       user=None, 
+                       form_data=request.form)
+
+
+    cur.execute("""
+        select login, full_name, is_admin
+        from bulochkin_staffs
+        where user_id = %s
+    """, (user_id,))
+
+    user = cur.fetchone()
+
+    cur.close()
+    conn.close()
+    return render_template("admin/user_form.html", user=user)
+
+
+@admin.route('/users/points/<int:user_id>', methods=['GET', 'POST'])
+@admin_required
+@login_required
+def user_points(user_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if request.method == 'POST':
+        selected_points = request.form.getlist("points")  # ['1', '3', '5']
+
+        # 1. удаляем старые связи
+        cur.execute("""
+            delete from staff_points
+            where user_id = %s
+        """, (user_id,))
+
+        # 2. вставляем новые
+        for point_id in selected_points:
+            cur.execute("""
+                insert into staff_points (user_id, point_id)
+                values (%s, %s)
+            """, (user_id, point_id))
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        flash("Точки пользователя обновлены", "success")
+        return redirect(url_for("admin.users"))
+
+    # --- GET часть ---
+
+    # пользователь
+    cur.execute("""
+        select login, full_name
+        from bulochkin_staffs
+        where user_id = %s
+    """, (user_id,))
+    user = cur.fetchone()
+
+    # все точки
+    cur.execute("""
+        select point_id, name
+        from points
+        order by name
+    """)
+    points = cur.fetchall()
+
+    # выбранные точки
+    cur.execute("""
+        select point_id
+        from staff_points
+        where user_id = %s
+    """, (user_id,))
+    user_points = [row["point_id"] for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/user_points.html",
+        user=user,
+        user_id=user_id,
+        points=points,
+        user_points=user_points
+    )
+
+
+
+@admin.route("/orders")
+@login_required
+@admin_required
 def orders():
-    return render_template('admin/orders.html')
+
+    status_filter = request.args.get("status", "").strip()
+    point_filter = request.args.get("point", "").strip()
+    hide_completed = request.args.get("hide_completed", "0").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    sql = """
+        select
+            o.order_id,
+            o.point_id,
+            p.name as point_name,
+            o.order_date,
+            o.status_id,
+            os.name as status_name,
+            o.user_id,
+            count(oi.order_item_id) as items_count,
+            coalesce(sum(oi.quantity), 0) as total_quantity,
+            current_date - o.order_date as order_age
+            --,is_extra_item
+        from orders o
+        join points p
+            on p.point_id = o.point_id
+        join order_status os
+            on os.status_id = o.status_id
+        left join order_items oi
+            on oi.order_id = o.order_id
+        where p.is_active = true
+    """
+
+    params = []
+
+    if status_filter:
+        sql += " and o.status_id = %s"
+        params.append(status_filter)
+
+    if point_filter:
+        sql += " and p.name ilike %s"
+        params.append(f"%{point_filter}%")
+
+    if hide_completed == "1":
+        sql += " and lower(os.name) not in ('заказ исполнен', 'исполнен')"
+
+    if date_from:
+        sql += " and o.order_date >= %s"
+        params.append(date_from)
+
+    if date_to:
+        sql += " and o.order_date <= %s"
+        params.append(date_to)
+
+    sql += """
+        group by
+            o.order_id,
+            o.point_id,
+            p.name,
+            o.order_date,
+            o.status_id,
+            os.name,
+            o.user_id
+        order by
+            o.order_date desc,
+            p.name asc
+    """
+
+    cur.execute(sql, params)
+    orders_rows = cur.fetchall()
+    print(orders_rows)
+    no_order_sql = """
+        select
+            p.point_id,
+            p.name as point_name
+        from points p
+        where p.is_active = true
+          and not exists (
+              select 1
+              from orders o
+              where o.point_id = p.point_id
+          )
+    """
+
+    no_order_params = []
+
+    if point_filter:
+        no_order_sql += " and p.name ilike %s"
+        no_order_params.append(f"%{point_filter}%")
+
+    no_order_sql += " order by p.name asc"
+
+    cur.execute(no_order_sql, no_order_params)
+    no_order_rows = cur.fetchall()
+
+    status_sql = """
+        select
+            status_id,
+            name
+        from order_status
+        order by status_id
+    """
+    cur.execute(status_sql)
+    statuses = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/orders.html",
+        orders_rows=orders_rows,
+        no_order_rows=no_order_rows,
+        statuses=statuses,
+        status_filter=status_filter,
+        point_filter=point_filter,
+        hide_completed=hide_completed,
+        date_from=date_from,
+        date_to=date_to
+    )
+
+
+
+@admin.route("/orders/<int:order_id>", methods=['GET', 'POST'])
+@login_required
+@admin_required
+def order_edit(order_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # =========================
+    # POST (СОХРАНЕНИЕ)
+    # =========================
+    if request.method == "POST":
+
+        # Получаем статус заказа
+        cur.execute("""
+            select status_id
+            from orders
+            where order_id = %s
+        """, (order_id,))
+
+        current_status = cur.fetchone()
+
+        print(f"Текущий статус заказа {current_status['status_id']}")
+
+        # Получаем все продукты (чтобы знать product_id)
+        cur.execute("""
+            select product_id
+            from products
+            where is_active = true
+        """)
+        products = cur.fetchall()
+
+        for p in products:
+            product_id = p["product_id"]
+
+            quantity = request.form.get(f"quantity_{product_id}", "0")
+            delivered = request.form.get(f"delivered_{product_id}", "0")
+
+            try:
+                quantity = float(quantity)
+            except:
+                quantity = 0
+
+            try:
+                delivered = float(delivered)
+            except:
+                delivered = 0
+
+            if int(current_status['status_id']) <= 4:
+                delivered = quantity
+
+            # Проверяем есть ли запись
+            cur.execute("""
+                select order_item_id
+                from order_items
+                where order_id = %s and product_id = %s
+            """, (order_id, product_id))
+
+            existing = cur.fetchone()
+
+
+            if existing:
+                # Обновляем
+                if quantity == 0 and delivered == 0:
+                    # Удаляем если всё 0
+                    cur.execute("""
+                        delete from order_items
+                        where order_id = %s and product_id = %s
+                    """, (order_id, product_id))
+                else:
+                    cur.execute("""
+                        update order_items
+                        set quantity = %s,
+                            delivered_quantity = %s
+                        where order_id = %s and product_id = %s
+                    """, (quantity, delivered, order_id, product_id))
+            else:
+                # Вставляем если есть значение
+                if quantity > 0 or delivered > 0:
+                    cur.execute("""
+                        insert into order_items (
+                            order_id,
+                            product_id,
+                            quantity,
+                            delivered_quantity,
+                            is_extra_item
+                        )
+                        values (%s, %s, %s, %s, false)
+                    """, (order_id, product_id, quantity, delivered))
+
+        conn.commit()
+        flash("Заказ сохранён", "success")
+
+        return redirect(url_for("admin.order_edit", order_id=order_id))
+
+    # =========================
+    # GET (ОТКРЫТИЕ)
+    # =========================
+
+    # --- ШАПКА ---
+    cur.execute("""
+        select
+            o.order_id,
+            o.order_date,
+            o.status_id,
+            os.name as status_name,
+            p.name as point_name
+        from orders o
+        join points p on p.point_id = o.point_id
+        join order_status os on os.status_id = o.status_id
+        where o.order_id = %s
+    """, (order_id,))
+
+    order = cur.fetchone()
+
+    if not order:
+        cur.close()
+        conn.close()
+        return "Заказ не найден", 404
+
+    # --- ВСЕ ТОВАРЫ + ДАННЫЕ ЗАКАЗА ---
+    cur.execute("""
+        select
+            p.product_id,
+            p.name as product_name,
+
+            pc.product_category_id,
+            pc.name as category_name,
+
+            coalesce(oi.order_item_id, 0) as order_item_id,
+            coalesce(oi.quantity, 0) as quantity,
+            coalesce(oi.delivered_quantity, 0) as delivered_quantity,
+            um.name as measure_name ,
+            is_extra_item
+
+        from products p
+        join product_categories pc
+            on pc.product_category_id = p.product_category_id
+        join unit_of_measure um on um.measure_id = p.measure_id
+
+        left join order_items oi
+            on oi.product_id = p.product_id
+           and oi.order_id = %s
+
+        where p.is_active = true
+          and pc.is_active = true
+
+        order by
+            pc.sort_order,
+            p.sort_order
+    """, (order_id,))
+
+    items_raw = cur.fetchall()
+
+    categories = {}
+    ordered_categories = []
+
+    for item in items_raw:
+        cat_id = item["product_category_id"]
+
+        if cat_id not in categories:
+            categories[cat_id] = {
+                "name": item["category_name"],
+                "items": []
+            }
+            ordered_categories.append(cat_id)
+
+        categories[cat_id]["items"].append(item)
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/order_edit.html",
+        order=order,
+        categories=categories,
+        ordered_categories=ordered_categories
+    )
+
+
+@admin.route("/orders/<int:order_id>/set_status/<int:status_id>", methods=["POST"])
+@login_required
+@admin_required
+def set_order_status(order_id, status_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        update orders
+        set status_id = %s
+        where order_id = %s
+    """, (status_id, order_id))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    flash("Статус обновлен", "success")
+
+    return redirect(url_for("admin.order_edit", order_id=order_id))
+
+
+@admin.route('/create_order')
+@admin_required
+@login_required
+def create_order():
+    return render_template('admin/create_order.html')
 
 
 @admin.route('/disposals')
@@ -566,6 +1173,7 @@ def orders():
 @login_required
 def disposals():
     return render_template('admin/disposals.html')
+
 
 @admin.route('/history')
 @admin_required
