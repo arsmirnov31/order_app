@@ -92,18 +92,35 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const inputs = document.querySelectorAll('input[type="number"]:not([readonly])');
-    
+
         inputs.forEach(function (input) {
             input.addEventListener('focus', function () {
                 this.select();
             });
-    
+
             input.addEventListener('click', function () {
                 this.select();
             });
         });
     });
-    </script>
+
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const allCheckbox = document.getElementById("all_points");
+        const pointCheckboxes = document.querySelectorAll("input[name='point_ids']");
+
+        function togglePoints() {
+            pointCheckboxes.forEach(cb => {
+                cb.disabled = allCheckbox.checked;
+            });
+        }
+
+        allCheckbox.addEventListener("change", togglePoints);
+
+        togglePoints();
+    });
+
+</script>
 
 </body>
 </html>

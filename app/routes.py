@@ -166,6 +166,7 @@ def orders():
         ,   product_name
         ,   measure_name    
         from v_get_products
+        order by category_order, sort_order
     """)
 
     products = cur.fetchall()
@@ -217,6 +218,7 @@ def orders():
 @point_required
 def save_orders():
 
+    print("Пытаемся сохранить заказ")
     ## Процедура сохранения заказа
     order_id = int(request.form.get("order_id"))
     is_approved = request.form.get("is_approved")  # галка
@@ -252,9 +254,9 @@ def save_orders():
         if value == "":
             quantity = 0
         else:
-            quantity = round(float(value), 2)
+            quantity = round(float(value), 3)
 
-        quantity = round(quantity, 2)
+        quantity = round(quantity, 3)
         print(f"Для заказа {order_id}, отметили продукт с идетификатором {product_id} в количестве {quantity}")
         
         ## Если что то добавилось, мы это добавляем 
@@ -407,9 +409,9 @@ def save_disposals():
         if value == "":
             quantity = 0
         else:
-            quantity = round(float(value), 2)
+            quantity = round(float(value), 3)
 
-        quantity = round(quantity, 2)
+        quantity = round(quantity, 3)
         print(f"Для заказа {disposal_id}, отметили продукт с идетификатором {product_id} в количестве {quantity}")
         
         ## Если что то добавилось, мы это добавляем 
@@ -620,8 +622,8 @@ def order_view(order_id):
             p.name,
             oi.quantity,
             oi.delivered_quantity,
-            u.name,
-            oi.is_extra_item
+            oi.is_extra_item,
+            u.name                  as measure_name
         from order_items oi
         join products p on oi.product_id = p.product_id
         join product_categories c on p.product_category_id = c.product_category_id

@@ -1,0 +1,159 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Выгрузка заказов{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h3 class="mb-4">Выгрузка заказов</h3>
+
+    <!-- ФИЛЬТР -->
+    <div class="card mb-4">
+        <div class="card-header">Фильтр</div>
+        <div class="card-body">
+
+            <form method="get">
+
+                <div class="row g-3">
+
+                    <!-- ДАТА -->
+                    <div class="col-md-4">
+                        <label class="form-label">Дата</label>
+                        <input
+                            type="date"
+                            name="report_date"
+                            class="form-control"
+                            value="{{ report_date }}"
+                        >
+                    </div>
+
+                    <!-- ТОЧКИ -->
+                    <div class="col-md-8">
+                        <label class="form-label d-block">Точки</label>
+
+                        <!-- ВСЕ ТОЧКИ -->
+                        <div class="form-check mb-2">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                name="all_points"
+                                id="all_points"
+                                value="1"
+                                {% if all_points %}checked{% endif %}
+                            >
+                            <label class="form-check-label" for="all_points">
+                                Все точки
+                            </label>
+                        </div>
+
+                        <!-- СПИСОК ТОЧЕК -->
+                        <div class="border rounded p-3" style="max-height: 220px; overflow-y: auto;">
+
+                            {% for point in points %}
+                                <div class="form-check">
+                                    <input
+                                        class="form-check-input point-checkbox"
+                                        type="checkbox"
+                                        name="point_ids"
+                                        value="{{ point.point_id }}"
+                                        id="point_{{ point.point_id }}"
+                                        {% if point.point_id in selected_point_ids %}checked{% endif %}
+                                    >
+                                    <label class="form-check-label" for="point_{{ point.point_id }}">
+                                        {{ point.name }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+
+                        </div>
+                    </div>
+
+                    <!-- КНОПКИ -->
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            Показать
+                        </button>
+
+                        <a href="{{ url_for('admin.orders_export') }}" class="btn btn-secondary">
+                            Сбросить
+                        </a>
+                    </div>
+
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <!-- ПРЕДУПРЕЖДЕНИЕ -->
+    {% if no_points_selected or not report_date %}
+        <div class="alert alert-warning">
+            Выберите хотя бы одну точку и укажите дату заказа
+        </div>
+    {% endif %}
+
+    <!-- EXCEL -->
+    <div class="card mb-4">
+        <div class="card-header">Excel-файл</div>
+        <div class="card-body">
+
+            <input type="file" class="form-control mb-2" disabled>
+
+            {% if has_excel_file %}
+                <div class="alert alert-success">
+                    Загружен файл: {{ uploaded_file_name }}
+                </div>
+            {% else %}
+                <div class="text-muted">Файл не загружен</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ПРЕДПРОСМОТР -->
+    <div class="card mb-4">
+        <div class="card-header">Предпросмотр</div>
+        <div class="card-body">
+
+            {% if preview_data %}
+                Таблица появится здесь
+            {% else %}
+                <div class="text-muted">
+                    Нет данных для отображения
+                </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <!-- ЭКСПОРТ -->
+    <div class="card">
+        <div class="card-header">Экспорт</div>
+        <div class="card-body">
+            <button class="btn btn-success" disabled>
+                Скачать Excel
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    console.log('awd')
+    const allCheckbox = document.getElementById("all_points");
+    const pointCheckboxes = document.querySelectorAll(".point-checkbox");
+
+    function togglePoints() {
+        pointCheckboxes.forEach(cb => {
+            cb.disabled = allCheckbox.checked;
+        });
+    }
+
+    allCheckbox.addEventListener("change", togglePoints);
+
+    togglePoints();
+});
+</script>
+
+{% endblock %}

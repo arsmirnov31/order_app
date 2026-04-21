@@ -35,7 +35,7 @@
     </div>
 </div>
 
-<form method="POST" action="{{ url_for('main.save_disposals') }}">
+<form method="POST" action="{{ url_for('main.save_disposals') }}"  novalidate>
 
 <input type="hidden" name="disposal_id" value="{{ disposal_id }}">
 
@@ -80,17 +80,17 @@
                                 class="form-control text-end"
 
                                 {% if product.quantity %}
-                                    {% if product.measure == 'шт' %}
-                                        value="{{ product.quantity|float }}"
+                                    {% if product.measure in ['шт', 'упак'] %}
+                                        value="{{ product.quantity|int }}"
                                     {% else %}
                                         value="{{ product.quantity|float }}"
                                     {% endif %}
                                 {% endif %}
 
-                                {% if product.measure == 'шт' %}
+                                {% if product.measure in ['шт', 'упак'] %}
                                     step="1"
                                 {% else %}
-                                    step="0.1"
+                                    step="0.001"
                                 {% endif %}
 
                                 min="0"
@@ -149,5 +149,77 @@
 {% endif %}
 
 </form>
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="validationToast" class="toast align-items-center text-white bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body">
+        Ошибка в размерности. Штуки в целых числах, граммы с точностью до 3 знаков.
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const toastEl = document.getElementById('validationToast');
+    const toast = toastEl ? new bootstrap.Toast(toastEl, { delay: 5000 }) : null;
+
+    form.addEventListener('submit', function(e) {
+        let isCustomValid = true;
+        const inputs = form.querySelectorAll('input[type="number"]');
+
+        // Очищаем предыдущую визуальную валидацию
+        form.classList.remove('was-validated');
+
+        inputs.forEach(input => {
+            // Проверяем на соответствие атрибуту step (целые для шт/упак, 3 знака для кг/г)
+            if (!input.checkValidity()) {
+                isCustomValid = false;
+            }
+        });
+
+        if (!isCustomValid || !form.checkValidity()) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (toast) toast.show();
+
+            // Ищем первое невалидное поле
+            const firstInvalid = form.querySelector('input:invalid');
+            if (firstInvalid) {
+                // 1. Находим аккордеон, в котором лежит ошибка
+                const collapseEl = firstInvalid.closest('.accordion-collapse');
+                
+                if (collapseEl && !collapseEl.classList.contains('show')) {
+                    // Используем штатный метод Bootstrap для открытия
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseEl);
+                    bsCollapse.show();
+
+                    // Фокус после анимации открытия
+                    collapseEl.addEventListener('shown.bs.collapse', () => {
+                        firstInvalid.focus();
+                        // Мягкий скролл к полю
+                        firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, { once: true });
+                } else {
+                    firstInvalid.focus();
+                }
+            }
+        }
+
+        form.classList.add('was-validated');
+    }, false);
+
+    // Дополнительно: запрещаем ввод символов 'e', '+', '-' в числовые поля
+    form.querySelectorAll('input[type="number"]').forEach(input => {
+        input.addEventListener('keydown', function(e) {
+            if (['e', 'E', '+'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

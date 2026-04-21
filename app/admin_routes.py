@@ -1,10 +1,111 @@
-from .auth import login_required, point_required, admin_required
+from .auth import login_required, admin_required
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from .db import get_db_connection
 import psycopg2.extras
 from psycopg2 import Error
+from werkzeug.utils import secure_filename
+import os
+import uuid
+import tempfile
+from datetime import date
 
+
+#ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"}
 admin = Blueprint('admin', __name__, url_prefix='/admin')
+
+
+# def allowed_excel_file(filename):
+#     _, ext = os.path.splitext(filename.lower())
+#     return ext in ALLOWED_EXCEL_EXTENSIONS
+
+# def cleanup_temp_excel():
+#     """
+#     Удаляет временный Excel-файл, если он был сохранен ранее.
+#     """
+#     temp_excel_path = session.get("order_export_temp_excel_path")
+
+#     if temp_excel_path and os.path.exists(temp_excel_path):
+#         try:
+#             os.remove(temp_excel_path)
+#         except OSError:
+#             pass
+
+#     session.pop("order_export_temp_excel_path", None)
+#     session.pop("order_export_temp_excel_name", None)
+
+# def get_points_for_filter():
+#     """
+#     Возвращает список активных точек для фильтра.
+#     """
+#     conn = get_db_connection()
+#     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+#     cur.execute("""
+#         select
+#             point_id,
+#             name
+#         from points
+#         where is_active = true
+#         order by sort_order
+#     """)
+#     points = cur.fetchall()
+
+#     cur.close()
+#     conn.close()
+
+#     return points
+
+# def get_selected_point_ids():
+#     """
+#     Читает point_id из query string.
+#     При multiple-select request.args.getlist('point_ids') вернет список строк.
+#     """
+#     raw_ids = request.args.getlist("point_ids")
+#     result = []
+
+#     for value in raw_ids:
+#         try:
+#             result.append(int(value))
+#         except (TypeError, ValueError):
+#             continue
+
+#     return result
+
+
+
+# def get_export_rows_from_db(order_date, selected_point_ids):
+#     """
+#     Возвращает нормализованные строки из БД для выгрузки.
+
+#     Формат строки:
+#     {
+#         "category_name": ...,
+#         "product_id": ...,
+#         "product_name": ...,
+#         "unit_name": ...,
+#         "point_id": ...,
+#         "point_name": ...,
+#         "quantity": ...
+#     }
+
+#     Используем только утвержденные заказы (status_id = 4).
+#     """
+#     if not order_date:
+#         return []
+
+#     conn = get_db_connection()
+#     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+#     params = [order_date]
+
+
+#     point_filter_sql = ""
+#     if selected_point_ids:
+#         point_filter_sql = "and o.point_id = any(%s)"
+#         params.append(selected_point_ids)
+
+
+
 
 
 @admin.route('/')
@@ -1485,6 +1586,164 @@ def search_products():
     ]
 
     return result
+
+@admin.route("/disposal/<int:disposal_id>/set_status/<int:status_id>", methods=["POST"])
+@login_required
+@admin_required
+def set_disposal_status(disposal_id, status_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        update disposals
+        set status_id = %s
+        where disposal_id = %s
+    """, (status_id, disposal_id))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    flash("Статус обновлен", "success")
+
+    return redirect(url_for("admin.disposal_edit", disposal_id=disposal_id))
+
+
+@admin.route('/orders_export', methods=['GET'])
+@admin_required
+@login_required
+def orders_export():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # -------------------------
+    # 1. Получаем фильтры из GET
+    # -------------------------
+    report_date = request.args.get("report_date", "")
+    all_points = request.args.get("all_points") == "1"
+
+    report_date = report_date if report_date else date.today()
+
+    # -------------------------
+    # 2. Загружаем список точек
+    # -------------------------
+    cur.execute("""
+        select
+            point_id,
+            name
+        from points
+        where is_active = true
+        order by sort_order
+    """)
+    points = cur.fetchall()
+
+    # -------------------------
+    # 3. Обрабатываем выбор точек
+    # -------------------------
+    if all_points:
+        selected_point_ids = [p["point_id"] for p in points]
+    else:
+        
+        selected_point_ids = []
+        for value in request.args.getlist("point_ids"):
+            print(f"Выбираем конкретную точки {value}")
+            try:
+                selected_point_ids.append(int(value))
+            except (TypeError, ValueError):
+                pass
+
+    # -------------------------
+    # 4. Флаг "ничего не выбрано"
+    # -------------------------
+
+    no_points_selected = not all_points and not selected_point_ids
+    print(no_points_selected)
+    # -------------------------
+    # 5. Обрабатываем данные из таблицы
+    # -------------------------
+    cur.execute("""
+        select
+            pc.name                    as product_category_name
+            ,p.product_id
+            ,p.name                    as product_name
+            ,u.name                    as unit_name
+            ,pt.point_id
+            ,pt.name                   as point_name
+            ,oi.quantity               as quantity
+        from orders o
+        join order_items oi
+            on oi.order_id = o.order_id
+        join products p
+            on p.product_id = oi.product_id
+        left join product_categories pc
+            on pc.product_category_id = p.product_category_id
+        left join public.unit_of_measure u
+            on u.measure_id = p.measure_id
+        join points pt
+            on pt.point_id = o.point_id
+        where
+            o.status_id = 4
+            and o.order_date::date = %(report_date)s
+            and (
+                %(all_points)s = true
+                or o.point_id = any(%(selected_point_ids)s)
+            )
+        order by
+            pt.sort_order nulls last,
+            pc.sort_order,
+            p.sort_order
+    """, {
+        "report_date": report_date,
+        "all_points": all_points,
+        "selected_point_ids": selected_point_ids
+    })
+
+    rows = cur.fetchall()
+    for row in rows:
+        print(row)
+
+    # -------------------------
+    # 5. Заглушки (пока нет логики)
+    # -------------------------
+    preview_data = None
+    uploaded_file_name = None
+    has_excel_file = False
+
+
+
+
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin/orders_export.html",
+        report_date=report_date,
+        points=points,
+        selected_point_ids=selected_point_ids,
+        all_points=all_points,
+        no_points_selected=no_points_selected,
+        preview_data=preview_data,
+        uploaded_file_name=uploaded_file_name,
+        has_excel_file=has_excel_file
+    )
+
+
+@admin.route('/orders_export/upload_excel', methods=['POST'])
+@admin_required
+@login_required
+def upload_excel():
+    return redirect(url_for("admin.orders_export"))
+
+
+@admin.route('/orders_export/remove_excel', methods=['POST'])
+@admin_required
+@login_required
+def remove_excel():
+    return redirect(url_for("admin.orders_export"))
+
 
 
 @admin.route('/history')
