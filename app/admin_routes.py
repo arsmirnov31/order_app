@@ -1,4 +1,5 @@
 from .auth import login_required, admin_required
+from .utils import generate_excel, format_date, build_report_data, normalize_product_name, parse_excel, parse_sheet, merge_with_excel, safe_decimal
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from .db import get_db_connection
 import psycopg2.extras
@@ -8,104 +9,21 @@ import os
 import uuid
 import tempfile
 from datetime import date
+from flask import send_file
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
+from io import BytesIO
+from openpyxl.worksheet.page import PageMargins
+from openpyxl.styles import Border, Side
+import re
+import base64
+from io import BytesIO
+from decimal import Decimal
 
 
-#ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"}
+
 admin = Blueprint('admin', __name__, url_prefix='/admin')
-
-
-# def allowed_excel_file(filename):
-#     _, ext = os.path.splitext(filename.lower())
-#     return ext in ALLOWED_EXCEL_EXTENSIONS
-
-# def cleanup_temp_excel():
-#     """
-#     Удаляет временный Excel-файл, если он был сохранен ранее.
-#     """
-#     temp_excel_path = session.get("order_export_temp_excel_path")
-
-#     if temp_excel_path and os.path.exists(temp_excel_path):
-#         try:
-#             os.remove(temp_excel_path)
-#         except OSError:
-#             pass
-
-#     session.pop("order_export_temp_excel_path", None)
-#     session.pop("order_export_temp_excel_name", None)
-
-# def get_points_for_filter():
-#     """
-#     Возвращает список активных точек для фильтра.
-#     """
-#     conn = get_db_connection()
-#     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-#     cur.execute("""
-#         select
-#             point_id,
-#             name
-#         from points
-#         where is_active = true
-#         order by sort_order
-#     """)
-#     points = cur.fetchall()
-
-#     cur.close()
-#     conn.close()
-
-#     return points
-
-# def get_selected_point_ids():
-#     """
-#     Читает point_id из query string.
-#     При multiple-select request.args.getlist('point_ids') вернет список строк.
-#     """
-#     raw_ids = request.args.getlist("point_ids")
-#     result = []
-
-#     for value in raw_ids:
-#         try:
-#             result.append(int(value))
-#         except (TypeError, ValueError):
-#             continue
-
-#     return result
-
-
-
-# def get_export_rows_from_db(order_date, selected_point_ids):
-#     """
-#     Возвращает нормализованные строки из БД для выгрузки.
-
-#     Формат строки:
-#     {
-#         "category_name": ...,
-#         "product_id": ...,
-#         "product_name": ...,
-#         "unit_name": ...,
-#         "point_id": ...,
-#         "point_name": ...,
-#         "quantity": ...
-#     }
-
-#     Используем только утвержденные заказы (status_id = 4).
-#     """
-#     if not order_date:
-#         return []
-
-#     conn = get_db_connection()
-#     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-#     params = [order_date]
-
-
-#     point_filter_sql = ""
-#     if selected_point_ids:
-#         point_filter_sql = "and o.point_id = any(%s)"
-#         params.append(selected_point_ids)
-
-
-
 
 
 @admin.route('/')
@@ -130,6 +48,16 @@ def dashboard():
     """)
 
     result = cur.fetchone()
+
+    # Если result — None, используем словарь с нулями
+
+    if not result:
+        result = {
+            'orders_today': 0,
+            'drafts_count': 0,
+            'approved_count': 0,
+            'disposals_today': 0
+        }
 
     cur.close()
     conn.close()
@@ -1611,112 +1539,61 @@ def set_disposal_status(disposal_id, status_id):
     return redirect(url_for("admin.disposal_edit", disposal_id=disposal_id))
 
 
+from datetime import date
+import base64
+from io import BytesIO
+
 @admin.route('/orders_export', methods=['GET'])
 @admin_required
 @login_required
 def orders_export():
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    from datetime import date
+    import os
 
     # -------------------------
-    # 1. Получаем фильтры из GET
+    # фильтры
     # -------------------------
-    report_date = request.args.get("report_date", "")
+    report_date = request.args.get("report_date")
     all_points = request.args.get("all_points") == "1"
 
-    report_date = report_date if report_date else date.today()
+    report_date = report_date if report_date else date.today().strftime("%Y-%m-%d")
 
-    # -------------------------
-    # 2. Загружаем список точек
-    # -------------------------
-    cur.execute("""
-        select
-            point_id,
-            name
-        from points
-        where is_active = true
-        order by sort_order
-    """)
-    points = cur.fetchall()
-
-    # -------------------------
-    # 3. Обрабатываем выбор точек
-    # -------------------------
-    if all_points:
-        selected_point_ids = [p["point_id"] for p in points]
-    else:
-        
-        selected_point_ids = []
-        for value in request.args.getlist("point_ids"):
-            print(f"Выбираем конкретную точки {value}")
-            try:
-                selected_point_ids.append(int(value))
-            except (TypeError, ValueError):
-                pass
-
-    # -------------------------
-    # 4. Флаг "ничего не выбрано"
-    # -------------------------
+    selected_point_ids = []
+    for value in request.args.getlist("point_ids"):
+        try:
+            selected_point_ids.append(int(value))
+        except (TypeError, ValueError):
+            pass
 
     no_points_selected = not all_points and not selected_point_ids
-    print(no_points_selected)
-    # -------------------------
-    # 5. Обрабатываем данные из таблицы
-    # -------------------------
-    cur.execute("""
-        select
-            pc.name                    as product_category_name
-            ,p.product_id
-            ,p.name                    as product_name
-            ,u.name                    as unit_name
-            ,pt.point_id
-            ,pt.name                   as point_name
-            ,oi.quantity               as quantity
-        from orders o
-        join order_items oi
-            on oi.order_id = o.order_id
-        join products p
-            on p.product_id = oi.product_id
-        left join product_categories pc
-            on pc.product_category_id = p.product_category_id
-        left join public.unit_of_measure u
-            on u.measure_id = p.measure_id
-        join points pt
-            on pt.point_id = o.point_id
-        where
-            o.status_id = 4
-            and o.order_date::date = %(report_date)s
-            and (
-                %(all_points)s = true
-                or o.point_id = any(%(selected_point_ids)s)
-            )
-        order by
-            pt.sort_order nulls last,
-            pc.sort_order,
-            p.sort_order
-    """, {
-        "report_date": report_date,
-        "all_points": all_points,
-        "selected_point_ids": selected_point_ids
-    })
-
-    rows = cur.fetchall()
-    for row in rows:
-        print(row)
 
     # -------------------------
-    # 5. Заглушки (пока нет логики)
+    # excel
     # -------------------------
-    preview_data = None
+    excel_data = None
     uploaded_file_name = None
     has_excel_file = False
 
+    if "excel_file_path" in session:
+        path = session["excel_file_path"]
 
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                excel_data = parse_excel(f)
 
+            has_excel_file = True
+            uploaded_file_name = session.get("excel_filename")
 
-
-    cur.close()
-    conn.close()
+    # -------------------------
+    # данные
+    # -------------------------
+    preview_data, points = build_report_data(
+        report_date,
+        all_points,
+        selected_point_ids,
+        excel_data
+    )
 
     return render_template(
         "admin/orders_export.html",
@@ -1730,19 +1607,113 @@ def orders_export():
         has_excel_file=has_excel_file
     )
 
+import base64
+from io import BytesIO
+import os
 
-@admin.route('/orders_export/upload_excel', methods=['POST'])
+@admin.route('/orders_export/download', methods=['GET'])
 @admin_required
 @login_required
-def upload_excel():
-    return redirect(url_for("admin.orders_export"))
+def orders_export_download():
 
+    from datetime import date
+    import os
 
-@admin.route('/orders_export/remove_excel', methods=['POST'])
+    # -------------------------
+    # фильтры
+    # -------------------------
+    report_date = request.args.get("report_date")
+    all_points = request.args.get("all_points") == "1"
+
+    report_date = report_date if report_date else date.today().strftime("%Y-%m-%d")
+
+    selected_point_ids = []
+    for value in request.args.getlist("point_ids"):
+        try:
+            selected_point_ids.append(int(value))
+        except (TypeError, ValueError):
+            pass
+
+    # -------------------------
+    # excel
+    # -------------------------
+    excel_data = None
+
+    if "excel_file_path" in session:
+        path = session["excel_file_path"]
+
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                excel_data = parse_excel(f)
+
+    # -------------------------
+    # данные
+    # -------------------------
+    preview_data, points = build_report_data(
+        report_date,
+        all_points,
+        selected_point_ids,
+        excel_data
+    )
+
+    # -------------------------
+    # excel файл
+    # -------------------------
+    excel_file = generate_excel(preview_data, points, report_date)
+
+    return send_file(
+        excel_file,
+        as_attachment=True,
+        download_name=f"orders_{report_date}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@admin.route('/orders_export/upload', methods=['POST'])
 @admin_required
 @login_required
-def remove_excel():
-    return redirect(url_for("admin.orders_export"))
+def orders_export_upload():
+
+    import tempfile
+    import os
+    import uuid
+
+    file = request.files.get("excel_file")
+
+    if not file or file.filename == "":
+        return redirect(url_for('admin.orders_export'))
+
+    # уникальное имя
+    filename = f"{uuid.uuid4()}.xlsx"
+    temp_path = os.path.join(tempfile.gettempdir(), filename)
+
+    file.save(temp_path)
+
+    session["excel_file_path"] = temp_path
+    session["excel_filename"] = file.filename
+
+    # сохраняем фильтры
+    return redirect(url_for(
+        'admin.orders_export',
+        report_date=request.form.get("report_date"),
+        all_points=request.form.get("all_points"),
+        point_ids=request.form.getlist("point_ids")
+    ))
+
+@admin.route('/orders_export/clear', methods=['POST'])
+@admin_required
+@login_required
+def orders_export_clear():
+
+    import os
+
+    path = session.pop("excel_file_path", None)
+
+    if path and os.path.exists(path):
+        os.remove(path)
+
+    session.pop("excel_filename", None)
+
+    return redirect(url_for('admin.orders_export'))
 
 
 

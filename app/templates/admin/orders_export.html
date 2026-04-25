@@ -3,6 +3,7 @@
 {% block title %}Выгрузка заказов{% endblock %}
 
 {% block content %}
+
 <div class="container mt-4">
 
     <h3 class="mb-4">Выгрузка заказов</h3>
@@ -31,7 +32,6 @@
                     <div class="col-md-8">
                         <label class="form-label d-block">Точки</label>
 
-                        <!-- ВСЕ ТОЧКИ -->
                         <div class="form-check mb-2">
                             <input
                                 class="form-check-input"
@@ -46,7 +46,6 @@
                             </label>
                         </div>
 
-                        <!-- СПИСОК ТОЧЕК -->
                         <div class="border rounded p-3" style="max-height: 220px; overflow-y: auto;">
 
                             {% for point in points %}
@@ -86,9 +85,9 @@
     </div>
 
     <!-- ПРЕДУПРЕЖДЕНИЕ -->
-    {% if no_points_selected or not report_date %}
+    {% if no_points_selected %}
         <div class="alert alert-warning">
-            Выберите хотя бы одну точку и укажите дату заказа
+            Выберите хотя бы одну точку
         </div>
     {% endif %}
 
@@ -97,14 +96,37 @@
         <div class="card-header">Excel-файл</div>
         <div class="card-body">
 
-            <input type="file" class="form-control mb-2" disabled>
+            <form method="post" action="{{ url_for('admin.orders_export_upload') }}" enctype="multipart/form-data">
+                
+                <input type="hidden" name="report_date" value="{{ report_date }}">
+                <input type="hidden" name="all_points" value="{{ '1' if all_points else '' }}">
+
+                {% for pid in selected_point_ids %}
+                    <input type="hidden" name="point_ids" value="{{ pid }}">
+                {% endfor %}
+                <div class="row g-2">
+
+                    <div class="col-md-6">
+                        <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xlsm">
+                    </div>
+
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary">
+                            Загрузить
+                        </button>
+                    </div>
+
+                </div>
+            </form>
 
             {% if has_excel_file %}
-                <div class="alert alert-success">
-                    Загружен файл: {{ uploaded_file_name }}
+                <div class="alert alert-success mt-2">
+                    Загружен файл: <strong>{{ uploaded_file_name }}</strong>
+
+                    <form method="post" action="{{ url_for('admin.orders_export_clear') }}" style="display:inline;">
+                        <button class="btn btn-sm btn-danger ms-2">Удалить</button>
+                    </form>
                 </div>
-            {% else %}
-                <div class="text-muted">Файл не загружен</div>
             {% endif %}
         </div>
     </div>
@@ -115,7 +137,58 @@
         <div class="card-body">
 
             {% if preview_data %}
-                Таблица появится здесь
+                <div class="alert alert-light mb-2 py-2">
+                    <strong>Дата отчета:</strong> {{ report_date }}
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr>
+                                <th>Ассортимент</th>
+
+                                {% for point in points %}
+                                    <th class="text-end">{{ point.name }}</th>
+                                {% endfor %}
+
+                                <th class="text-end">Итого</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        {% for category in preview_data %}
+                            {% set cat_idx = loop.index %}
+
+                            <!-- Заголовок категории -->
+                            <tr class="table-secondary"
+                                style="cursor: pointer;"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#cat-{{ cat_idx }}">
+                                <td colspan="{{ points|length + 2 }}">
+                                    <strong>📁 {{ category.category_name }}</strong>
+                                </td>
+                            </tr>
+
+                            <!-- Группа строк -->
+                            <tbody id="cat-{{ cat_idx }}" class="collapse">
+                                {% for row in category.rows %}
+                                    <tr>
+                                        <td>{{ row.product_name }}</td>
+
+                                        {% for val in row.point_values %}
+                                            <td class="text-end">{{ val }}</td>
+                                        {% endfor %}
+
+                                        <td class="text-end"><strong>{{ row.total_display }}</strong></td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
             {% else %}
                 <div class="text-muted">
                     Нет данных для отображения
@@ -129,9 +202,15 @@
     <div class="card">
         <div class="card-header">Экспорт</div>
         <div class="card-body">
-            <button class="btn btn-success" disabled>
+            <a href="{{ url_for(
+                'admin.orders_export_download',
+                report_date=report_date,
+                all_points='1' if all_points else None,
+                point_ids=selected_point_ids
+            ) }}"
+            class="btn btn-success">
                 Скачать Excel
-            </button>
+            </a>
         </div>
     </div>
 
@@ -140,17 +219,19 @@
 <!-- JS -->
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-    console.log('awd')
+
     const allCheckbox = document.getElementById("all_points");
     const pointCheckboxes = document.querySelectorAll(".point-checkbox");
 
     function togglePoints() {
         pointCheckboxes.forEach(cb => {
-            cb.disabled = allCheckbox.checked;
+            cb.disabled = allCheckbox && allCheckbox.checked;
         });
     }
 
-    allCheckbox.addEventListener("change", togglePoints);
+    if (allCheckbox) {
+        allCheckbox.addEventListener("change", togglePoints);
+    }
 
     togglePoints();
 });
