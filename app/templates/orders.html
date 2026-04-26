@@ -36,7 +36,7 @@
 
 
 
-<form method="POST" action="{{ url_for('main.save_orders') }}" novalidate>
+<form id="orderForm" method="POST" action="{{ url_for('main.save_orders') }}" novalidate>
 
 <input type="hidden" name="order_id" value="{{ order_id }}">
 
@@ -222,6 +222,21 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+});
+</script>
+
+<script>
+document.getElementById('orderForm').addEventListener('submit', function(event) {
+    const isApproved = document.getElementById('isApproved').checked;
+
+    if (isApproved) {
+        const confirmed = confirm("Вы пометили заказ как утвержденный. После сохранения редактирование будет заблокировано. Продолжить?");
+        
+        if (!confirmed) {
+            // Если пользователь нажал "Отмена", предотвращаем отправку формы
+            event.preventDefault();
+        }
+    }
 });
 </script>
 

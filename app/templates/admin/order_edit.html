@@ -30,7 +30,7 @@
 
         <!-- На проверку -->
         {% if order.status_id == 4 %}
-        <form method="post"
+        <form id="send_check_point" method="post"
             action="{{ url_for('admin.set_order_status', order_id=order.order_id, status_id=5) }}"
             style="display:inline;">
             <button class="btn btn-primary btn-sm">
@@ -259,6 +259,21 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+});
+
+</script>
+
+<script>
+document.getElementById('send_check_point').addEventListener('submit', function(event) {
+
+
+    const confirmed = confirm("Вы хотите отправить заказ на проверку точке. После этого действия, выгрузка в excel этого заказ не возможна. Продолжить ?");
+    
+    if (!confirmed) {
+        // Если пользователь нажал "Отмена", предотвращаем отправку формы
+        event.preventDefault();
+    }
 
 });
 </script>

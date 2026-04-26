@@ -747,7 +747,7 @@ def edit_user(user_id):
                         set 
                             login = %s
                         ,   full_name = %s
-                        ,   password_hash = md5(%s)
+                        ,   password_hash = crypt(%s,gen_salt('bf'))
                         ,   is_admin = %s
                         ,   is_active = True
                         where user_id = %s

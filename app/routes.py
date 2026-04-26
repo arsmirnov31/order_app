@@ -261,12 +261,11 @@ def save_orders():
         
         ## Если что то добавилось, мы это добавляем 
         if quantity > 0:
-            print('Вызов процедуроы')
             cur.execute(
                 "call add_info_product_order(%(order_id)s, %(product_id)s, %(quantity)s)",
                 {'order_id': order_id, 'product_id': product_id, 'quantity': quantity}
             )
-            conn.commit()
+            ##conn.commit()
         else:
             cur.execute("""
                 delete from order_items
